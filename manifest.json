@@ -1,0 +1,26 @@
+{
+  "name": "Moneybird QR",
+  "version": "1.0",
+  "description": "Insert an EPC QR code on the invoice page",
+  "permissions": [
+    "declarativeContent", "storage", "activeTab"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://moneybird.com/*/documents/*"],
+      "js": ["qrcode.min.js", "moneybird.js"],
+      "css": ["moneybird.css"]
+    }
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ],
+    "persistent": false
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  },
+  "manifest_version": 2
+}

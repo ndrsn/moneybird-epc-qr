@@ -1,0 +1,9 @@
+.epc-qr-code {
+  text-align: center;
+}
+
+.epc-qr-code img {
+  border: 1px solid #d8e2f0;
+  border-radius: 3px;
+  box-shadow: 0 0 10px 0 rgba(19,29,41,.05);
+}
