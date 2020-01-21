@@ -1,8 +1,28 @@
+function parseDocument(document) {
+  const benificiaryAccountNumberIban = document.contact.sepa_iban;
+  const bicOfBenificiaryBank = document.contact.sepa_bic;
+  const benificiaryName =
+    document.contact.sepa_iban_account_name || document.contact.company_name;
+
+  const { currency = 'EUR', total_price_incl_tax_base: amount } = document;
+  const remittanceInformation = `Invoice ${document.reference}`;
+
+  return {
+    bicOfBenificiaryBank,
+    benificiaryName,
+    benificiaryAccountNumberIban,
+    currency,
+    amount,
+    remittanceInformation,
+  };
+}
+
 function getEpcQrString({
   bicOfBenificiaryBank,
   benificiaryName,
   benificiaryAccountNumberIban,
-  currencyAndAmount,
+  currency,
+  amount,
   remittanceInformation,
 }) {
   /*
@@ -30,7 +50,7 @@ function getEpcQrString({
     bicOfBenificiaryBank,
     benificiaryName,
     benificiaryAccountNumberIban,
-    currencyAndAmount, // e.g., EUR25.00
+    `${currency}${amount}`, // e.g., EUR25.00
     '', // Purpose of transfer (optional AT-44 code)
     remittanceInformation, // the description
   ].join('\n');
@@ -60,49 +80,39 @@ function insertQrCodeDiv(imageUrl) {
   elementHistoryAside.insertBefore(qrCodeDiv, documentHistoryDiv);
 }
 
-const isOnInvoicePage = () =>
-  window.location.pathname.match(/^\/\d+\/documents\/\d+$/) !== null;
+function parseKeys(keysString) {
+  const lines = keysString.split('\n').filter(s => !!s.trim().length);
+  const pairs = new Map(lines.map(line => line.replace(/\s+/g, '').split(':')));
 
-async function run() {
-  if (!window.QRCode) {
-    console.error('QRCode unavailable');
-    return;
-  }
+  return pairs;
+}
 
-  if (isOnInvoicePage() === false) return;
+function getAdministrationApiKey(administrationId) {
+  const promise = new Promise((resolve, reject) => {
+    chrome.storage.sync.get(['moneybirdApiKeys'], function({
+      moneybirdApiKeys,
+    }) {
+      try {
+        const pairs = parseKeys(moneybirdApiKeys);
 
-  const getAdministrationApiKey = administrationId => {
-    const promise = new Promise((resolve, reject) => {
-      chrome.storage.sync.get(['moneybirdApiKeys'], function({
-        moneybirdApiKeys,
-      }) {
-        try {
-          const lines = moneybirdApiKeys.split('\n');
-          const pairs = new Map(
-            lines.map(line => line.replace(/\s+/g, '').split(':'))
-          );
+        if (pairs.has(administrationId)) {
+          const apiToken = pairs.get(administrationId);
 
-          if (pairs.has(administrationId)) {
-            const apiToken = pairs.get(administrationId);
-
-            resolve(apiToken);
-          }
-
-          resolve(null);
-        } catch (error) {
-          console.error(error);
+          resolve(apiToken);
+        } else {
           resolve(null);
         }
-      });
+      } catch (error) {
+        console.error(error);
+        resolve(null);
+      }
     });
+  });
 
-    return promise;
-  };
+  return promise;
+}
 
-  const [administrationId, , documentId] = window.location.pathname
-    .split('/')
-    .slice(1);
-
+async function getDocument({ administrationId, documentId }) {
   const moneybirdApiVersion = 'v2';
   const moneybirdApiKey = await getAdministrationApiKey(administrationId);
 
@@ -124,27 +134,48 @@ async function run() {
 
   if (!response.ok) {
     console.error('Invalid Moneybird API response', response);
-    return;
+    return null;
   }
 
   const document = await response.json();
 
-  if (document.state === 'paid') return;
+  return document;
+}
 
-  const benificiaryAccountNumberIban = document.contact.sepa_iban;
-  const bicOfBenificiaryBank = document.contact.sepa_bic;
-  const benificiaryName =
-    document.contact.sepa_iban_account_name || document.contact.company_name;
+async function run() {
+  if (!window.QRCode) {
+    console.error('QRCode unavailable');
+    return;
+  }
 
-  const { currency = 'EUR', total_price_incl_tax_base: total } = document;
-  const currencyAndAmount = `${currency}${total}`;
-  const remittanceInformation = `Invoice ${document.reference}`;
+  const isOnInvoicePage =
+    window.location.pathname.match(/^\/\d+\/documents\/\d+$/) !== null;
+
+  if (isOnInvoicePage === false) return;
+
+  const [administrationId, , documentId] = window.location.pathname
+    .split('/')
+    .slice(1);
+
+  const document = await getDocument({ administrationId, documentId });
+
+  if (!document || document.state === 'paid') return;
+
+  const {
+    bicOfBenificiaryBank,
+    benificiaryName,
+    benificiaryAccountNumberIban,
+    currency,
+    amount,
+    remittanceInformation,
+  } = parseDocument(document);
 
   const dataString = getEpcQrString({
     bicOfBenificiaryBank,
     benificiaryName,
     benificiaryAccountNumberIban,
-    currencyAndAmount,
+    currency,
+    amount,
     remittanceInformation,
   });
 
@@ -162,8 +193,6 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const observer = new MutationObserver(callback);
-
-  console.log('observing');
 
   const config = {
     childList: true,
