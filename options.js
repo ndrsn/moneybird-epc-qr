@@ -1,12 +1,12 @@
 // Saves options to chrome.storage
 function save_options() {
-  var moneybirdApiKey = document
-    .getElementById('moneybird-api-key')
+  var moneybirdApiKeys = document
+    .getElementById('moneybird-api-keys')
     .value.trim();
 
   chrome.storage.sync.set(
     {
-      moneybirdApiKey,
+      moneybirdApiKeys,
     },
     function() {
       // Update status to let user know options were saved.
@@ -25,10 +25,10 @@ function save_options() {
 // stored in chrome.storage.
 function restore_options() {
   // Use default value color = 'red' and likesColor = true.
-  chrome.storage.sync.get(['moneybirdApiKey'], function({
-    moneybirdApiKey = '',
+  chrome.storage.sync.get(['moneybirdApiKeys'], function({
+    moneybirdApiKeys = '',
   }) {
-    document.getElementById('moneybird-api-key').value = moneybirdApiKey;
+    document.getElementById('moneybird-api-keys').value = moneybirdApiKeys;
   });
 }
 

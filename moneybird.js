@@ -71,52 +71,86 @@ async function run() {
 
   if (isOnInvoicePage() === false) return;
 
+  const getAdministrationApiKey = administrationId => {
+    const promise = new Promise((resolve, reject) => {
+      chrome.storage.sync.get(['moneybirdApiKeys'], function({
+        moneybirdApiKeys,
+      }) {
+        try {
+          const lines = moneybirdApiKeys.split('\n');
+          const pairs = new Map(
+            lines.map(line => line.replace(/\s+/g, '').split(':'))
+          );
+
+          if (pairs.has(administrationId)) {
+            const apiToken = pairs.get(administrationId);
+
+            resolve(apiToken);
+          }
+
+          resolve(null);
+        } catch (error) {
+          console.error(error);
+          resolve(null);
+        }
+      });
+    });
+
+    return promise;
+  };
+
   const [administrationId, , documentId] = window.location.pathname
     .split('/')
     .slice(1);
 
-  chrome.storage.sync.get(['moneybirdApiKey'], async function({
-    moneybirdApiKey,
-  }) {
-    const apiVersion = 'v2';
+  const moneybirdApiVersion = 'v2';
+  const moneybirdApiKey = await getAdministrationApiKey(administrationId);
 
-    const response = await fetch(
-      `https://moneybird.com/api/${apiVersion}/${administrationId}/documents/purchase_invoices/${documentId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${moneybirdApiKey}`,
-        },
-      }
+  if (!moneybirdApiKey) {
+    console.warn(
+      `Moneybird API key unavailable for administration ${administrationId}`
     );
+    return;
+  }
 
-    if (!response.ok) {
-      console.error('Invalid Moneybird API response', response);
-      return;
+  const response = await fetch(
+    `https://moneybird.com/api/${moneybirdApiVersion}/${administrationId}/documents/purchase_invoices/${documentId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${moneybirdApiKey}`,
+      },
     }
+  );
 
-    const document = await response.json();
+  if (!response.ok) {
+    console.error('Invalid Moneybird API response', response);
+    return;
+  }
 
-    const benificiaryAccountNumberIban = document.contact.sepa_iban;
-    const bicOfBenificiaryBank = document.contact.sepa_bic;
-    const benificiaryName =
-      document.contact.sepa_iban_account_name || document.contact.company_name;
+  const document = await response.json();
 
-    const { currency = 'EUR', total_price_incl_tax_base: total } = document;
-    const currencyAndAmount = `${currency}${total}`;
-    const remittanceInformation = `Invoice ${document.reference}`;
+  if (document.state === 'paid') return;
 
-    const dataString = getEpcQrString({
-      bicOfBenificiaryBank,
-      benificiaryName,
-      benificiaryAccountNumberIban,
-      currencyAndAmount,
-      remittanceInformation,
-    });
+  const benificiaryAccountNumberIban = document.contact.sepa_iban;
+  const bicOfBenificiaryBank = document.contact.sepa_bic;
+  const benificiaryName =
+    document.contact.sepa_iban_account_name || document.contact.company_name;
 
-    const dataUrl = await window.QRCode.toDataURL(dataString);
+  const { currency = 'EUR', total_price_incl_tax_base: total } = document;
+  const currencyAndAmount = `${currency}${total}`;
+  const remittanceInformation = `Invoice ${document.reference}`;
 
-    insertQrCodeDiv(dataUrl);
+  const dataString = getEpcQrString({
+    bicOfBenificiaryBank,
+    benificiaryName,
+    benificiaryAccountNumberIban,
+    currencyAndAmount,
+    remittanceInformation,
   });
+
+  const dataUrl = await window.QRCode.toDataURL(dataString);
+
+  insertQrCodeDiv(dataUrl);
 }
 
 window.onload = run;
@@ -128,7 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const observer = new MutationObserver(callback);
-  
+
   console.log('observing');
 
   const config = {
